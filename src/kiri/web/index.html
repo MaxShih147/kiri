@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kiri</title>
+<style>
+  :root {
+    --bg: #f4f3ef; --panel: #ffffff; --ink: #1d1d1b; --muted: #6f6d66;
+    --line: #dddad2; --accent: #c2410c; --accent-ink: #ffffff; --view: #e9e7e1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #1f1f1c; --ink: #ecebe6; --muted: #9b998f;
+      --line: #34332e; --accent: #f97316; --accent-ink: #1a0d03; --view: #121210;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+  aside { background: var(--panel); border-right: 1px solid var(--line);
+    padding: 20px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  h1 small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  section { display: flex; flex-direction: column; gap: 8px; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 0; font-weight: 600; }
+  button, .file { appearance: none; border: 1px solid var(--line); background: var(--bg);
+    color: var(--ink); padding: 9px 12px; border-radius: 8px; font: inherit; cursor: pointer;
+    text-align: center; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+    font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; }
+  .file input { display: none; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .k { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .status { font-size: 13px; padding: 10px 12px; border-radius: 8px; background: var(--bg);
+    border: 1px solid var(--line); min-height: 40px; }
+  .status.busy::before { content: ""; display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--accent); margin-right: 8px;
+    animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .2; } }
+  ul.pieces { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;
+    max-height: 260px; overflow-y: auto; }
+  ul.pieces li { display: flex; gap: 8px; align-items: center; font-size: 12px;
+    font-variant-numeric: tabular-nums; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+  ul.pieces li:hover { background: var(--bg); }
+  ul.pieces li.off { opacity: .35; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+  main { position: relative; background: var(--view); min-height: 0; }
+  main canvas { display: block; width: 100%; height: 100%; }
+  .drop { position: absolute; inset: 24px; border: 2px dashed var(--line); border-radius: 16px;
+    display: flex; align-items: center; justify-content: center; color: var(--muted);
+    font-size: 16px; pointer-events: none; text-align: center; padding: 16px; }
+  .drop.hot { border-color: var(--accent); color: var(--accent); }
+  label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+  @media (max-width: 720px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 60vh; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>kiri<small>模型自動分件</small></h1>
+
+    <section>
+      <h2>1 · 模型</h2>
+      <label class="file">選擇檔案（STL / OBJ / PLY / GLB）
+        <input id="file" type="file" accept=".stl,.obj,.ply,.glb,.gltf,.off,.3mf">
+      </label>
+      <div class="hint" id="model-info">也可以直接把檔案拖進右邊的畫面。</div>
+    </section>
+
+    <section>
+      <h2>2 · 分幾塊</h2>
+      <div class="row">
+        <span class="k" id="k-label">–</span>
+        <input id="k" type="range" min="2" max="24" value="2" disabled>
+      </div>
+      <div class="row">
+        <button id="suggest" disabled>用建議值</button>
+      </div>
+      <div class="hint" id="k-hint">掃描完成後可以拖動滑桿預覽分塊。</div>
+    </section>
+
+    <section>
+      <h2>3 · 切開</h2>
+      <button class="primary" id="cut" disabled>切割並封面</button>
+      <label class="check"><input type="checkbox" id="show-cut" checked disabled> 顯示切好的零件</label>
+      <div>
+        <div class="hint">爆炸圖</div>
+        <input id="explode" type="range" min="0" max="100" value="25" disabled>
+      </div>
+      <button id="zip" disabled>下載全部 STL（ZIP）</button>
+    </section>
+
+    <div class="status" id="status">尚未載入模型</div>
+
+    <section id="pieces-box" hidden>
+      <h2>零件</h2>
+      <ul class="pieces" id="pieces"></ul>
+      <div class="hint">淺色的部分是封面。點一下可隱藏或顯示。</div>
+    </section>
+  </aside>
+  <main id="view">
+    <div class="drop" id="drop">把模型檔拖到這裡</div>
+  </main>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const $ = (id) => document.getElementById(id);
+const view = $("view");
+
+// --- scene -------------------------------------------------------------
+const model = { mesh: null, radius: 1, centre: new THREE.Vector3() };
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+camera.up.set(0, 0, 1);              // models come Z-up: the print bed is XY
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8478, 1.4));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+scene.add(sun);
+const root = new THREE.Group();
+scene.add(root);
+
+function themeBackground() {
+  scene.background = new THREE.Color(getComputedStyle(document.documentElement)
+    .getPropertyValue("--view").trim());
+}
+themeBackground();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", themeBackground);
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / Math.max(h, 1);
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(view);
+resize();
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  sun.position.copy(camera.position).add(new THREE.Vector3(1, -1, 2).multiplyScalar(model.radius || 1));
+  renderer.render(scene, camera);
+})();
+
+// --- colours -----------------------------------------------------------
+function partColour(i) {
+  const c = new THREE.Color();
+  c.setHSL(((i * 0.618034) % 1 + 1) % 1, 0.55, 0.55);
+  return c;
+}
+
+// --- data --------------------------------------------------------------
+let pieces = [];        // { object, centre, faces }
+let hidden = new Set();
+
+let generation = 0;     // bumped on every upload: older loads drop out
+
+async function fetchMesh(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(url + ": " + res.status);
+  const buf = await res.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const nl = bytes.indexOf(10);
+  const head = JSON.parse(new TextDecoder().decode(bytes.subarray(0, nl)));
+  let at = nl + 1;
+  const v = new Float32Array(buf.slice(at, at + head.vertices * 12)); at += head.vertices * 12;
+  const f = new Uint32Array(buf.slice(at, at + head.faces * 12)); at += head.faces * 12;
+  const extra = at < buf.byteLength ? new Uint8Array(buf.slice(at)) : null;
+  return { head, v, f, extra };
+}
+
+// One vertex per triangle corner, so every face can take its own colour.
+function flatGeometry(v, f) {
+  const pos = new Float32Array(f.length * 3);
+  for (let i = 0; i < f.length; i++) {
+    const s = f[i] * 3;
+    pos[i * 3] = v[s]; pos[i * 3 + 1] = v[s + 1]; pos[i * 3 + 2] = v[s + 2];
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(f.length * 3), 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+function paint(geometry, colourOf) {
+  const col = geometry.getAttribute("color");
+  const a = col.array, n = a.length / 9;
+  for (let t = 0; t < n; t++) {
+    const c = colourOf(t);
+    for (let k = 0; k < 3; k++) {
+      a[t * 9 + k * 3] = c.r; a[t * 9 + k * 3 + 1] = c.g; a[t * 9 + k * 3 + 2] = c.b;
+    }
+  }
+  col.needsUpdate = true;
+}
+
+const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75,
+  metalness: 0.0, flatShading: false, side: THREE.DoubleSide });
+
+function frame(lo, hi) {
+  const a = new THREE.Vector3(...lo), b = new THREE.Vector3(...hi);
+  model.centre.copy(a).add(b).multiplyScalar(0.5);
+  model.radius = a.distanceTo(b) / 2 || 1;
+  controls.target.copy(model.centre);
+  camera.near = model.radius / 100; camera.far = model.radius * 100;
+  camera.position.copy(model.centre).add(new THREE.Vector3(0.55, -1, 0.35).normalize()
+    .multiplyScalar(model.radius * 3.2));
+  camera.updateProjectionMatrix();
+}
+
+function clearPieces() {
+  for (const p of pieces) { root.remove(p.object); p.object.geometry.dispose(); }
+  pieces = []; hidden = new Set();
+  $("pieces").innerHTML = ""; $("pieces-box").hidden = true;
+}
+
+async function showModel() {
+  clearPieces();
+  const gen = generation;
+  let got;
+  try { got = await fetchMesh("/api/mesh"); }
+  catch (err) { if (gen !== generation) return; throw err; }
+  if (gen !== generation) return;
+  const { head, v, f } = got;
+  if (model.mesh) { root.remove(model.mesh); model.mesh.geometry.dispose(); }
+  model.mesh = new THREE.Mesh(flatGeometry(v, f), material);
+  const grey = new THREE.Color(0xb9b4a8);
+  paint(model.mesh.geometry, () => grey);
+  root.add(model.mesh);
+  frame(head.lo, head.hi);
+}
+
+let partsWanted = 0, partsShown = 0, partsBusy = false;
+async function showParts(k) {
+  partsWanted = k;
+  if (partsBusy || !model.mesh) return;
+  partsBusy = true;
+  while (partsShown !== partsWanted) {
+    const want = partsWanted;
+    setStatus("計算 " + want + " 塊的分區…", true);
+    const lab = new Uint16Array(await (await fetch("/api/parts?k=" + want)).arrayBuffer());
+    const colours = [];
+    paint(model.mesh.geometry, (t) => colours[lab[t]] ||= partColour(lab[t]));
+    partsShown = want;
+    setStatus("預覽：" + want + " 塊。滿意就按「切割並封面」。");
+  }
+  partsBusy = false;
+}
+
+async function showPieces(info) {
+  clearPieces();
+  const list = $("pieces"), gen = generation;
+  for (let i = 0; i < info.pieces.length; i++) {
+    let got;
+    try { got = await fetchMesh("/api/piece?i=" + i); }
+    catch (err) { if (gen !== generation) return; throw err; }
+    if (gen !== generation) return;
+    const { head, v, f, extra } = got;
+    const g = flatGeometry(v, f);
+    const base = partColour(i);
+    const light = base.clone().lerp(new THREE.Color(0xffffff), 0.6);
+    paint(g, (t) => (extra && extra[t] ? light : base));
+    const object = new THREE.Mesh(g, material);
+    const lo = new THREE.Vector3(...head.lo), hi = new THREE.Vector3(...head.hi);
+    const centre = lo.add(hi).multiplyScalar(0.5);
+    pieces.push({ object, centre });
+    root.add(object);
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="swatch" style="background:#${base.getHexString()}"></span>
+      <span>零件 ${i + 1}</span><span class="hint" style="margin-left:auto">${f.length / 3 | 0} 面 · 體積 ${info.pieces[i].volume.toPrecision(4)}</span>`;
+    li.onclick = () => {
+      hidden.has(i) ? hidden.delete(i) : hidden.add(i);
+      li.classList.toggle("off", hidden.has(i)); place();
+    };
+    list.appendChild(li);
+  }
+  $("pieces-box").hidden = false;
+  place();
+}
+
+function place() {
+  const showCut = $("show-cut").checked && pieces.length > 0;
+  if (model.mesh) model.mesh.visible = !showCut;
+  const s = $("explode").value / 100;
+  pieces.forEach((p, i) => {
+    p.object.visible = showCut && !hidden.has(i);
+    const d = p.centre.clone().sub(model.centre).multiplyScalar(s * 1.2);
+    p.object.position.copy(d);
+  });
+}
+
+// --- server state ------------------------------------------------------
+function setStatus(text, busy = false) {
+  $("status").textContent = text;
+  $("status").classList.toggle("busy", busy);
+}
+
+let lastStage = null, polling = false;
+async function poll() {
+  if (polling) return;
+  polling = true;
+  try {
+    for (;;) {
+      const gen = generation;
+      const st = await (await fetch("/api/state")).json();
+      if (gen !== generation) { await new Promise((r) => setTimeout(r, 100)); continue; }
+      const changed = st.stage !== lastStage;
+      lastStage = st.stage;
+      render(st, changed);
+      if (st.stage !== "scanning" && st.stage !== "cutting") break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  } finally { polling = false; }
+}
+
+async function render(st, changed) {
+  const ready = st.stage === "ready" || st.stage === "cut";
+  $("k").disabled = !ready; $("suggest").disabled = !ready || !st.suggested;
+  $("cut").disabled = !ready; $("zip").disabled = st.stage !== "cut";
+  $("show-cut").disabled = $("explode").disabled = st.stage !== "cut";
+  if (st.faces) {
+    $("model-info").textContent = `${st.name}：${st.faces.toLocaleString()} 面` +
+      (st.open_edges ? `，有 ${st.open_edges} 條開口邊（切出的零件可能不封閉）` : "，封閉");
+  }
+  if (st.stage === "empty") setStatus("尚未載入模型");
+  if (st.stage === "failed") setStatus("讀取失敗：" + st.message);
+  if (st.stage === "scanning") setStatus("掃描中：" + st.message + `（${st.seconds}s）`, true);
+  if (st.stage === "cutting") setStatus(`切割 ${st.k} 塊中：${st.message}（${st.seconds}s）`, true);
+  if (!changed) return;
+  if (st.stage === "scanning" && !model.mesh) {
+    // The mesh becomes available a moment into the scan.
+    const wait = async () => {
+      const s2 = await (await fetch("/api/state")).json();
+      if (s2.faces) await showModel(); else if (s2.stage === "scanning") setTimeout(wait, 300);
+    };
+    wait();
+  }
+  if (st.stage === "ready") {
+    if (!model.mesh) await showModel();
+    $("k").max = st.max_parts;
+    $("k-hint").textContent = st.suggested ? `建議 ${st.suggested} 塊（分界最明顯的位置）。` : "";
+    if (!partsShown) {
+      const k = st.suggested || 2;
+      $("k").value = k; $("k-label").textContent = k;
+      showParts(k);
+    } else if (st.message.startsWith("cutting failed")) setStatus(st.message);
+  }
+  if (st.stage === "cut") {
+    let text = `完成：${st.pieces.length} 個零件（${st.seconds}s）。`;
+    if (st.refused.length) text += ` 有 ${st.refused.length} 個零件無法再分開。`;
+    setStatus(text);
+    $("show-cut").checked = true;
+    await showPieces(st);
+  }
+}
+
+// --- controls ----------------------------------------------------------
+async function upload(file) {
+  if (!file) return;
+  if (model.mesh) { root.remove(model.mesh); model.mesh.geometry.dispose(); model.mesh = null; }
+  generation++;
+  clearPieces(); partsShown = 0; lastStage = null;
+  setStatus("上傳 " + file.name + "…", true);
+  await fetch("/api/model?name=" + encodeURIComponent(file.name), { method: "POST", body: file });
+  poll();
+}
+$("file").onchange = (e) => upload(e.target.files[0]);
+for (const ev of ["dragenter", "dragover"]) view.addEventListener(ev, (e) => {
+  e.preventDefault(); $("drop").classList.add("hot"); });
+for (const ev of ["dragleave", "drop"]) view.addEventListener(ev, (e) => {
+  e.preventDefault(); $("drop").classList.remove("hot"); });
+view.addEventListener("drop", (e) => { $("drop").hidden = true; upload(e.dataTransfer.files[0]); });
+$("file").addEventListener("change", () => { $("drop").hidden = true; });
+
+$("k").oninput = () => {
+  $("k-label").textContent = $("k").value;
+  if (pieces.length) { $("show-cut").checked = false; place(); }
+  showParts(+$("k").value);
+};
+$("suggest").onclick = async () => {
+  const st = await (await fetch("/api/state")).json();
+  if (st.suggested) { $("k").value = st.suggested; $("k").oninput(); }
+};
+$("cut").onclick = async () => {
+  await fetch("/api/cut?k=" + $("k").value, { method: "POST" });
+  lastStage = null; poll();
+};
+$("show-cut").onchange = place;
+$("explode").oninput = place;
+$("zip").onclick = () => { location.href = "/api/zip"; };
+
+// A page reload picks up whatever the server already holds.
+fetch("/api/state").then((r) => r.json()).then((st) => {
+  if (st.stage !== "empty" && generation === 0) { $("drop").hidden = true; poll(); }
+});
+</script>
+</body>
+</html>

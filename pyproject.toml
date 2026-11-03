@@ -1,0 +1,33 @@
+[project]
+name = "kiri"
+version = "0.1.0"
+description = "Cut a 3D model into closed parts along its natural seams"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "max shih", email = "kwshih147@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "embreex>=4.4.0.post1",
+    "fast-simplification>=0.2.0",
+    "numba>=0.68.1",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+    "triangle>=20250106",
+    "trimesh>=5.2.0",
+]
+
+[project.scripts]
+kiri = "kiri:main"
+
+[build-system]
+requires = ["uv_build>=0.9.29,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.11.2",
+    "pytest>=9.2.0",
+    "scikit-image>=0.26.0",
+]
